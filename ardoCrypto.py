@@ -99,11 +99,11 @@ def kdecrypt(key, ciphertext):
     ciphertext = base64.b64decode(ciphertext)
     iv  = ciphertext[:16]
     mac_given = ciphertext[-32:]
-    plaintext = padder.decode(AES.new(key, AES.MODE_CBC, iv).decrypt(ciphertext[16:-32]))
     mac = HMAC.new(key, digestmod=SHA256)
     mac.update(ciphertext[0:-32])
     if not is_equal(mac_given,mac.digest()):
         raise Exception('decryption failed')
+    plaintext = padder.decode(AES.new(key, AES.MODE_CBC, iv).decrypt(ciphertext[16:-32]))
     return plaintext.decode('utf8')
 
 
