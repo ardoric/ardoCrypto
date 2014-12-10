@@ -6,7 +6,7 @@ from Crypto.Hash   import HMAC
 from Crypto.Hash   import SHA256
 from Crypto.Hash   import SHA512
 from Crypto        import Random
-from pbkdf2        import PBKDF2
+from Crypto.Protocol.KDF import PBKDF2
 
 
 # taken from somewhere
@@ -83,7 +83,7 @@ random = Random.new()
 
 # this is really slow in python :S
 def deriveKey(password):
-    return PBKDF2(password.encode('utf8'), salt, iterations=37649).read(32)
+    return PBKDF2(password.encode('utf8'), salt, dkLen=32, count=37649, prf=None)
 
 def kencrypt(key, plaintext):
     plaintext = plaintext.encode('utf8')
