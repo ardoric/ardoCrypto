@@ -5,7 +5,7 @@ using System.Text;
 using System.Security.Cryptography;
 using System.IO;
 
-namespace OutSystems.NssCryptoAPI
+namespace ardo.Crypto
 {
     class CryptoBackend
     {
@@ -239,6 +239,34 @@ namespace OutSystems.NssCryptoAPI
             using (SHA512 sha = new SHA512Managed()) {
                 return equalBytes(sha.ComputeHash(ms.ToArray()), providedHash);
             }
+        }
+
+        // RSA 
+
+        public static string rsa_generateKey(int bits)
+        {
+            return (new RSACryptoServiceProvider(bits)).ToXmlString(true);
+        }
+
+        public static string rsa_getPublicKey(string privateKey)
+        {
+            RSACryptoServiceProvider rsa = new RSACryptoServiceProvider();
+            rsa.FromXmlString(privateKey);
+            return rsa.ToXmlString(false);
+        }
+
+        public static string rsa_encrypt(string publicKey, string plaintext)
+        {
+            RSACryptoServiceProvider rsa = new RSACryptoServiceProvider();
+            rsa.FromXmlString(publicKey);
+            return Convert.ToBase64String(rsa.Encrypt(Encoding.UTF8.GetBytes(plaintext), true));
+        }
+
+        public static string rsa_decrypt(string privateKey, string ciphertext)
+        {
+            RSACryptoServiceProvider rsa = new RSACryptoServiceProvider();
+            rsa.FromXmlString(privateKey);
+            return Encoding.UTF8.GetString(rsa.Decrypt(Convert.FromBase64String(ciphertext), true));
         }
 
     }

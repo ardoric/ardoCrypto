@@ -1,12 +1,23 @@
-package outsystems.noscryptoapi;
+package ardo.crypto;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.math.BigInteger;
+import java.security.KeyFactory;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Security;
+import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.spec.KeySpec;
+import java.security.spec.RSAPrivateCrtKeySpec;
+import java.security.spec.RSAPublicKeySpec;
 
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
@@ -16,6 +27,17 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 import javax.xml.bind.DatatypeConverter;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.xml.sax.InputSource;
 
 public class CryptoBackend {
 	
@@ -234,5 +256,174 @@ public class CryptoBackend {
             diff |= a[i] ^ b[i];
         return diff == 0;
     }
+    
+    
+    public static String rsa_generateKey(int bits) throws Exception
+    {
+    	KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+    	keyGen.initialize(bits);
+    	
+        return keyPairToXML(keyGen.genKeyPair());
+    }
+
+    public static String rsa_getPublicKey(String privateKey) throws Exception
+    {
+        DocumentBuilder docBuilder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+        
+        Document pubDoc = docBuilder.newDocument();
+        Document privDoc = docBuilder.parse(new InputSource(new StringReader(privateKey)));
+        
+        Element pubRoot = pubDoc.createElement("RSAKeyValue");
+        pubDoc.appendChild(pubRoot);
+        
+        Element privRoot = (Element)privDoc.getElementsByTagName("RSAKeyValue").item(0);
+        pubRoot.appendChild(pubDoc.importNode(privRoot.getElementsByTagName("Modulus").item(0).cloneNode(true), true));
+        pubRoot.appendChild(pubDoc.importNode(privRoot.getElementsByTagName("Exponent").item(0).cloneNode(true), true));
+        
+    	return docToXML(pubDoc);
+    }
+
+    public static String rsa_encrypt(String publicKey, String plaintext) throws Exception
+    {
+        Cipher cipher = Cipher.getInstance("RSA/None/OAEPWithSHA1AndMGF1Padding");
+        
+        KeyFactory keyfact = KeyFactory.getInstance("RSA");
+        PublicKey key = keyfact.generatePublic(getPublicSpecFromXML(publicKey));
+        
+        cipher.init(Cipher.ENCRYPT_MODE, key);
+        
+    	return DatatypeConverter.printBase64Binary(cipher.doFinal( plaintext.getBytes("UTF-8") ));
+    }
+
+    public static String rsa_decrypt(String privateKey, String ciphertext) throws Exception
+    {
+        Cipher cipher = Cipher.getInstance("RSA/None/OAEPWithSHA1AndMGF1Padding");
+        
+        KeyFactory keyfact = KeyFactory.getInstance("RSA");
+        PrivateKey key = keyfact.generatePrivate(getPrivateSpecFromXML(privateKey));
+        
+        cipher.init(Cipher.DECRYPT_MODE, key);
+        
+    	return new String(cipher.doFinal(DatatypeConverter.parseBase64Binary(ciphertext)), "UTF-8");
+    }
+    
+    
+    private static String keyPairToXML(KeyPair keyPair) throws Exception {
+    	
+        
+        DocumentBuilder docBuilder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+        
+        Document doc = docBuilder.newDocument();
+        Element root = doc.createElement("RSAKeyValue");
+        doc.appendChild(root);
+
+        RSAPrivateCrtKey privKey = (RSAPrivateCrtKey) keyPair.getPrivate();
+        
+        addElement(root, doc.createElement("Modulus"),  privKey.getModulus());
+        addElement(root, doc.createElement("Exponent"), privKey.getPublicExponent());
+        addElement(root, doc.createElement("P"),  privKey.getPrimeP());
+        addElement(root, doc.createElement("Q"),  privKey.getPrimeQ());
+        addElement(root, doc.createElement("DP"), privKey.getPrimeExponentP());
+        addElement(root, doc.createElement("DQ"), privKey.getPrimeExponentQ());
+        addElement(root, doc.createElement("InverseQ"), privKey.getCrtCoefficient());
+        addElement(root, doc.createElement("D"),  privKey.getPrivateExponent());
+        
+        
+        return docToXML(doc);
+    }
+    
+    private static void addElement(Element root, Element newElement, BigInteger value) {
+    	String text = DatatypeConverter.printBase64Binary(toIntegerBytes(value));
+    	newElement.setTextContent(text);
+    	root.appendChild(newElement);
+    }
+
 	
+    private static String docToXML(Document doc) throws Exception {
+    	  Transformer transformer = TransformerFactory.newInstance().newTransformer();
+    	  transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+    	  StreamResult result = new StreamResult(new StringWriter());
+    	  DOMSource source = new DOMSource(doc);
+    	  transformer.transform(source, result);
+    	  return result.getWriter().toString();
+    }
+    
+    private static RSAPrivateCrtKeySpec getPrivateSpecFromXML(String privateKey) throws Exception {
+        DocumentBuilder docBuilder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+        Element privKey = (Element)docBuilder.parse(new InputSource(new StringReader(privateKey))).getFirstChild();
+
+    	RSAPrivateCrtKeySpec spec = 
+    			new RSAPrivateCrtKeySpec(
+    					getKeyComponent(privKey, "Modulus"), 
+    					getKeyComponent(privKey, "Exponent"), 
+    					getKeyComponent(privKey, "D"), 
+    					getKeyComponent(privKey, "P"), 
+    					getKeyComponent(privKey, "Q"), 
+    					getKeyComponent(privKey, "DP"), 
+    					getKeyComponent(privKey, "DQ"), 
+    					getKeyComponent(privKey, "InverseQ"));
+    	return spec;
+    }
+    
+    private static RSAPublicKeySpec getPublicSpecFromXML(String publicKey) throws Exception {
+        DocumentBuilder docBuilder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+        Element privKey = (Element)docBuilder.parse(new InputSource(new StringReader(publicKey))).getFirstChild();
+
+        RSAPublicKeySpec spec = 
+    			new RSAPublicKeySpec(
+    					getKeyComponent(privKey, "Modulus"), 
+    					getKeyComponent(privKey, "Exponent")); 
+    	return spec;    	
+    }
+    
+    private static BigInteger getKeyComponent(Element root, String component) {
+    	return new BigInteger(1, DatatypeConverter.parseBase64Binary(root.getElementsByTagName(component).item(0).getTextContent()));
+    }
+    
+    	
+    /**
+     * 
+     * Taken from apache commons. 
+     * http://commons.apache.org/proper/commons-codec/apidocs/src-html/org/apache/commons/codec/binary/Base64.html
+     * 
+     * Returns a byte-array representation of a <code>BigInteger</code> without sign bit.
+     *
+     * @param bigInt
+     *            <code>BigInteger</code> to be converted
+     * @return a byte array representation of the BigInteger parameter
+     */
+    private static byte[] toIntegerBytes(final BigInteger bigInt) {
+    	int bitlen = bigInt.bitLength();
+    	// round bitlen
+    	bitlen = ((bitlen + 7) >> 3) << 3;
+    	final byte[] bigBytes = bigInt.toByteArray();
+
+    	if (((bigInt.bitLength() % 8) != 0) && (((bigInt.bitLength() / 8) + 1) == (bitlen / 8))) {
+    		return bigBytes;
+    	}
+    	// set up params for copying everything but sign bit
+    	int startSrc = 0;
+    	int len = bigBytes.length;
+
+    	// if bigInt is exactly byte-aligned, just skip signbit in copy
+    	if ((bigInt.bitLength() % 8) == 0) {
+    		startSrc = 1;
+    		len--;
+    	}
+    	final int startDst = bitlen / 8 - len; // to pad w/ nulls as per spec
+    	final byte[] resizedBytes = new byte[bitlen / 8];
+    	System.arraycopy(bigBytes, startSrc, resizedBytes, startDst, len);
+    	return resizedBytes;
+    }
+
+    
+    
+    public static void main(String[] args) throws Exception {
+    	String rsakey = rsa_generateKey(2048);
+    	System.out.println(rsakey);
+    	System.out.println(rsa_getPublicKey(rsakey));
+    	String ciphertext = rsa_encrypt(rsakey, "Boooyah");
+    	System.out.println(ciphertext);
+    	System.out.println(rsa_decrypt(rsakey, ciphertext));
+    }
 }
