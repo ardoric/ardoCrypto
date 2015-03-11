@@ -416,14 +416,4 @@ public class CryptoBackend {
     	return resizedBytes;
     }
 
-    
-    
-    public static void main(String[] args) throws Exception {
-    	String rsakey = rsa_generateKey(2048);
-    	System.out.println(rsakey);
-    	System.out.println(rsa_getPublicKey(rsakey));
-    	String ciphertext = rsa_encrypt(rsakey, "Boooyah");
-    	System.out.println(ciphertext);
-    	System.out.println(rsa_decrypt(rsakey, ciphertext));
-    }
 }
