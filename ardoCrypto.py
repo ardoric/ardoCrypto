@@ -152,13 +152,53 @@ def compare_password(password, hash):
     return is_equal(new_hash.digest(), base64.b64decode(split[1]))
 
 
+# Enterprise Manager Crypto functions
+
+from hashlib import sha1
+# implementation of the PasswordDeriveBytes pbkdf1 extension from .NET
+def pw_derive_bytes(password, salt, dkLen, iterationCount=1000, hashAlgo=sha1):
+    password = password.encode('utf-8')
+    base = hashAlgo(password + salt).digest()
+    for i in xrange(iterationCount-2):
+        base = hashAlgo(base).digest()
+    res = hashAlgo(base).digest()
+    p = 1
+    while len(res) < dkLen:
+        res += hashAlgo(str(p) + base).digest()
+        p  += 1
+    return res[:dkLen]
+
+em_salt = 'Ivan Medvedev'
+def em_deriveparams(password):
+    key_bytes = pw_derive_bytes(password, em_salt, 32+16, iterationCount=100)
+    key = key_bytes[:32]
+    # simulate the PasswordDeriveBytes bug
+    iv = key_bytes[8:16] + key_bytes[32+8:]
+    return (key, iv)
+
+def em_encrypt(password, plaintext):
+    key, iv = em_deriveparams(password)
+    plaintext_bytes = padder.encode(plaintext.encode('utf-16le'))
+    cipherbytes = AES.new(key,AES.MODE_CBC,iv).encrypt(plaintext_bytes)
+    return base64.b64encode(cipherbytes)
+
+def em_decrypt(password, ciphertext):
+    key, iv = em_deriveparams(password)
+    cipherbytes = base64.b64decode(ciphertext)
+    plaintext_bytes = padder.decode( AES.new(key,AES.MODE_CBC,iv).decrypt( cipherbytes ) )
+    return plaintext_bytes.decode('utf-16le')
+
+
+
 if __name__=='__main__':
     import sys
     functions = { 
             'encrypt': encrypt, 
             'decrypt': decrypt, 
             'det_encrypt': det_encrypt, 
-            'det_decrypt': det_decrypt
+            'det_decrypt': det_decrypt,
+            'em_encrypt': em_encrypt,
+            'em_decrypt': em_decrypt
         }
     print functions[sys.argv[1]](sys.argv[2], sys.argv[3])
 
