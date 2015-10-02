@@ -156,9 +156,16 @@ def compare_password(password, hash):
 
 from hashlib import sha1
 # implementation of the PasswordDeriveBytes pbkdf1 extension from .NET
+# Further discussion at: http://bouncy-castle.1462172.n4.nabble.com/NET-PasswordDeriveBytes-td1462616.html
+# where the bug I mention below is also noted.
+# In a nutshell, if we need more bytes than the digest length we repeat the last iteration
+# but adding a counter (as string) to the beginning of the digest.
 def pw_derive_bytes(password, salt, dkLen, iterationCount=1000, hashAlgo=sha1):
     password = password.encode('utf-8')
     base = hashAlgo(password + salt).digest()
+    if dkLen > len(base)*1000:
+        raise Exception("Limit Exceeded")
+        # preemptively say you've asked for too many bytes.
     for i in xrange(iterationCount-2):
         base = hashAlgo(base).digest()
     res = hashAlgo(base).digest()
@@ -169,10 +176,23 @@ def pw_derive_bytes(password, salt, dkLen, iterationCount=1000, hashAlgo=sha1):
     return res[:dkLen]
 
 em_salt = 'Ivan Medvedev'
+# https://www.linkedin.com/in/ivanmed ?
+# Why is this the salt used in Enterprise Manager? I dunno.
+# My guess is that someone fetched the sample code from
+# somewhere on the internets.
 def em_deriveparams(password):
     key_bytes = pw_derive_bytes(password, em_salt, 32+16, iterationCount=100)
     key = key_bytes[:32]
-    # simulate the PasswordDeriveBytes bug
+    # so, this should be:
+    # iv = key_bytes[32:]
+    # however, the PasswordDerviveBytes in EM Crypto is called as:
+    # key = pdb.GetBytes(32)
+    # iv  = pdb.GetBytes(16)
+    # and the GetBytes implementation has a bug when called with
+    # non-multiples of the size of the digest.
+    # therefore in order to correctly integrate we need to
+    # implement that bug here. It makes me feel dirty, but it has to 
+    # be done.
     iv = key_bytes[8:16] + key_bytes[32+8:]
     return (key, iv)
 
